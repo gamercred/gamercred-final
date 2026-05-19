@@ -60,8 +60,42 @@ Add the forwarded 5173 URL to `CORS_ORIGINS` in `apps/api/.env` and restart.
 - `/login` — Connect with Steam (popup)
 - `/leaderboard` — Global rankings
 - `/player/:steamId` — Profile + 60-game library
-- `/versus?a=<id>&b=<id>` — Side-by-side compare
+- `/versus?a=<id>&b=<id>` — Side-by-side compare + **Battle mini-game**
 - `/friends` — Search & manage allies
+
+## Versus Battle Mini-Game
+
+The Versus page includes an RPG-style battle where two players fight using stats derived from their real Steam data.
+
+### Stat Mapping
+
+| Steam Data | Battle Stat | Formula | Cap |
+|---|---|---|---|
+| `totalGames` (games owned) | ⚔ **ATK** (Attack) | `totalGames × 0.3` | 999 |
+| `totalHours` (total playtime) | ❤ **HP** (Hit Points) | `totalHours × 0.5` | 100–9999 |
+| `avgRating` (avg game review %) | 🛡 **DEF** (Defense) | `avgRating × 100` | 100 |
+| `credScore` | ⚡ **SPD** (Speed) | `credScore × 0.01` | 1–100 |
+
+### Damage Formula
+
+```
+baseDamage = ATK × (1 - DEF_opponent / 200) × random(0.8–1.2) × 1.2
+```
+
+### Special Mechanics
+
+| Mechanic | Chance / Trigger | Effect |
+|---|---|---|
+| **Critical Hit** | 15% per attack | 1.5× damage |
+| **Miss** | 10% per attack | 0 damage |
+| **Desperation** | Defender below 40% HP | Incoming damage × 1.8 |
+
+### Battle Flow
+
+1. **SPD** determines who attacks first (ties: coin flip)
+2. Players alternate turns, each applying the damage formula
+3. Fight ends when one player's HP reaches 0
+4. Results show total turns, crits landed, and misses
 
 ## Key API endpoints
 

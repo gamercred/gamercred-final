@@ -234,3 +234,233 @@ body {
 .ticker-track:hover { animation-play-state: paused; }
 
 .ticker-track:hover { animation-play-state: paused !important; }
+
+/* ══════════════════════════════════════════════
+   VERSUS BATTLE MINI-GAME
+   ══════════════════════════════════════════════ */
+
+/* Fullscreen battle overlay */
+.battle-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: hsl(220 30% 3% / 0.96);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.battle-overlay.shake {
+  animation: battle-shake 0.35s ease-out;
+}
+
+/* HP bar container */
+.hp-bar {
+  position: relative;
+  width: 100%;
+  height: 22px;
+  background: hsl(220 30% 8%);
+  border: 1px solid hsl(180 100% 50% / 0.3);
+  overflow: hidden;
+}
+.hp-bar--mag {
+  border-color: hsl(320 100% 50% / 0.3);
+}
+
+/* HP fill — smooth animated width */
+.hp-fill {
+  height: 100%;
+  transition: width 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  position: relative;
+}
+.hp-fill--cyan {
+  background: linear-gradient(90deg, hsl(180 100% 35%), hsl(180 100% 55%));
+  box-shadow: 0 0 12px hsl(180 100% 50% / 0.6), inset 0 1px 0 hsl(180 100% 80% / 0.3);
+}
+.hp-fill--mag {
+  background: linear-gradient(90deg, hsl(320 100% 35%), hsl(320 100% 55%));
+  box-shadow: 0 0 12px hsl(320 100% 50% / 0.6), inset 0 1px 0 hsl(320 100% 80% / 0.3);
+}
+
+/* Low HP warning pulse */
+.hp-fill--low {
+  animation: hp-pulse 0.8s ease-in-out infinite;
+}
+
+/* Damage number popup */
+.dmg-pop {
+  position: absolute;
+  font-size: 2rem;
+  font-weight: bold;
+  pointer-events: none;
+  animation: damage-pop 1.2s ease-out forwards;
+  text-shadow: 0 0 8px currentColor;
+  z-index: 45;
+}
+.dmg-pop--crit {
+  font-size: 4.5rem;
+  animation: damage-pop-crit 1.8s ease-out forwards;
+  text-shadow:
+    0 0 12px hsl(55 100% 60%),
+    0 0 30px hsl(55 100% 50% / 0.8),
+    0 0 60px hsl(55 100% 50% / 0.5),
+    0 0 100px hsl(30 100% 50% / 0.3);
+  filter: brightness(1.4);
+  letter-spacing: 0.05em;
+}
+.dmg-pop--miss {
+  font-size: 1.6rem;
+  color: hsl(0 0% 50%);
+  text-shadow: none;
+}
+
+/* Fullscreen crit flash — like a fighting game impact */
+.crit-flash {
+  position: fixed;
+  inset: 0;
+  z-index: 47;
+  pointer-events: none;
+  animation: crit-flash-anim 0.4s ease-out forwards;
+  background: radial-gradient(ellipse at center, hsl(55 100% 90% / 0.6) 0%, transparent 70%);
+  mix-blend-mode: screen;
+}
+
+/* Battle log */
+.battle-log {
+  max-height: 180px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: hsl(180 100% 50% / 0.3) transparent;
+  mask-image: linear-gradient(to bottom, transparent 0%, black 15%, black 100%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 15%, black 100%);
+}
+.battle-log::-webkit-scrollbar {
+  width: 4px;
+}
+.battle-log::-webkit-scrollbar-thumb {
+  background: hsl(180 100% 50% / 0.3);
+}
+
+/* Battle stat badge */
+.stat-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.15rem 0.5rem;
+  border: 1px solid hsl(180 100% 50% / 0.25);
+  background: hsl(180 100% 50% / 0.06);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* K.O. overlay */
+.ko-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 46;
+  animation: ko-fade-in 0.5s ease-out;
+}
+.ko-text {
+  font-size: 6rem;
+  text-transform: uppercase;
+  animation: ko-flash 1.5s ease-in-out infinite;
+}
+
+/* Winner glow */
+.winner-text {
+  animation: winner-glow 2s ease-in-out infinite;
+}
+
+/* Speed toggle */
+.speed-btn {
+  padding: 0.2rem 0.6rem;
+  border: 1px solid hsl(180 100% 50% / 0.3);
+  background: transparent;
+  color: hsl(180 100% 70%);
+  cursor: pointer;
+  text-transform: uppercase;
+  font-family: inherit;
+  font-size: 0.65rem;
+  transition: all 0.15s;
+}
+.speed-btn:hover {
+  background: hsl(180 100% 50% / 0.1);
+}
+.speed-btn--active {
+  background: hsl(180 100% 50% / 0.2);
+  border-color: hsl(180 100% 50% / 0.6);
+  box-shadow: 0 0 8px hsl(180 100% 50% / 0.3);
+}
+
+/* ── Keyframes ────────────────────────────── */
+
+@keyframes battle-shake {
+  0%, 100% { transform: translate(0, 0); }
+  10% { transform: translate(-6px, 3px); }
+  20% { transform: translate(5px, -4px); }
+  30% { transform: translate(-4px, 2px); }
+  40% { transform: translate(3px, -3px); }
+  50% { transform: translate(-2px, 1px); }
+  60% { transform: translate(2px, -1px); }
+  70% { transform: translate(-1px, 1px); }
+  80% { transform: translate(1px, 0); }
+}
+
+@keyframes damage-pop {
+  0% { opacity: 1; transform: translateY(0) scale(1); }
+  20% { opacity: 1; transform: translateY(-20px) scale(1.1); }
+  100% { opacity: 0; transform: translateY(-60px) scale(0.8); }
+}
+
+@keyframes damage-pop-crit {
+  0% { opacity: 1; transform: translateY(0) scale(0.5); }
+  8% { opacity: 1; transform: translateY(-5px) scale(1.8); }
+  20% { opacity: 1; transform: translateY(-25px) scale(1.5); }
+  100% { opacity: 0; transform: translateY(-100px) scale(0.6); }
+}
+
+@keyframes hp-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@keyframes crit-flash-anim {
+  0% { opacity: 0.8; }
+  30% { opacity: 0.5; }
+  100% { opacity: 0; }
+}
+
+@keyframes ko-fade-in {
+  0% { opacity: 0; transform: scale(0.5); }
+  60% { opacity: 1; transform: scale(1.1); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes ko-flash {
+  0%, 100% {
+    text-shadow: 0 0 12px hsl(55 100% 60% / 0.9), 0 0 30px hsl(55 100% 60% / 0.6), 0 0 60px hsl(55 100% 60% / 0.3);
+    color: hsl(55 100% 80%);
+  }
+  50% {
+    text-shadow: 0 0 20px hsl(55 100% 70% / 1), 0 0 50px hsl(55 100% 60% / 0.8), 0 0 90px hsl(55 100% 60% / 0.5);
+    color: hsl(55 100% 90%);
+  }
+}
+
+@keyframes winner-glow {
+  0%, 100% {
+    text-shadow: 0 0 8px currentColor, 0 0 20px currentColor;
+  }
+  50% {
+    text-shadow: 0 0 14px currentColor, 0 0 35px currentColor, 0 0 55px currentColor;
+  }
+}

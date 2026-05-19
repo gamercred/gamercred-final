@@ -113,6 +113,29 @@ export default function ChiptuneToggle() {
 
   useEffect(() => () => stop(), []);
 
+  // Allow battle component to pause/resume chiptune via custom events
+  const wasPlayingRef = useRef(false);
+  useEffect(() => {
+    const onPause = () => {
+      if (on) {
+        wasPlayingRef.current = true;
+        stop();
+      }
+    };
+    const onResume = () => {
+      if (wasPlayingRef.current) {
+        wasPlayingRef.current = false;
+        start();
+      }
+    };
+    window.addEventListener('battle-music-pause', onPause);
+    window.addEventListener('battle-music-resume', onResume);
+    return () => {
+      window.removeEventListener('battle-music-pause', onPause);
+      window.removeEventListener('battle-music-resume', onResume);
+    };
+  });
+
   return (
     <button
       type="button"

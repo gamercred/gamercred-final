@@ -39,6 +39,14 @@ export default {
           '0%, 100%': { textShadow: '0 0 8px hsl(180 100% 50% / 0.6), 0 0 18px hsl(180 100% 50% / 0.4)' },
           '50%': { textShadow: '0 0 14px hsl(180 100% 50% / 0.9), 0 0 28px hsl(180 100% 50% / 0.6)' },
         },
+        battleShake: {
+          '0%, 100%': { transform: 'translate(0, 0)' },
+          '10%': { transform: 'translate(-6px, 3px)' },
+          '20%': { transform: 'translate(5px, -4px)' },
+          '30%': { transform: 'translate(-4px, 2px)' },
+          '40%': { transform: 'translate(3px, -3px)' },
+          '50%': { transform: 'translate(-2px, 1px)' },
+        },
       },
       animation: {
         flicker: 'flicker 4s linear infinite',
@@ -46,6 +54,7 @@ export default {
         marquee: 'marquee 30s linear infinite',
         blink: 'blink 1s steps(1) infinite',
         glowpulse: 'glowpulse 2.5s ease-in-out infinite',
+        battleShake: 'battleShake 0.35s ease-out',
       },
     },
   },

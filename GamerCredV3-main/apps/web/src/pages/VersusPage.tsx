@@ -3,6 +3,7 @@ import { useLocation } from 'wouter';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import Panel from '@/components/Panel';
+import VersusBattle from '@/components/VersusBattle';
 import { LoadingScreen, ErrorScreen } from '@/components/Status';
 import { formatCred, formatHours, cn } from '@/lib/utils';
 
@@ -86,6 +87,8 @@ export default function VersusPage() {
 }
 
 function ComparisonBlock({ a, b }: { a: NonNullable<ReturnType<typeof api.profile> extends Promise<infer T> ? T : never>; b: typeof a }) {
+  const [showBattle, setShowBattle] = useState(false);
+
   const rows = [
     { label: 'CRED', av: a.user.credScore, bv: b.user.credScore, fmt: formatCred },
     { label: 'GAMES', av: a.user.totalGames, bv: b.user.totalGames, fmt: (n: number) => n.toLocaleString() },
@@ -97,6 +100,14 @@ function ComparisonBlock({ a, b }: { a: NonNullable<ReturnType<typeof api.profil
   const shared = b.games.filter((g) => aIds.has(g.appid)).slice(0, 12);
 
   return (
+    <>
+    {showBattle && (
+      <VersusBattle
+        aUser={a.user}
+        bUser={b.user}
+        onClose={() => setShowBattle(false)}
+      />
+    )}
     <div className="space-y-6">
       <div className="grid grid-cols-3 gap-4 items-stretch">
         <Panel className="text-center">
@@ -132,6 +143,16 @@ function ComparisonBlock({ a, b }: { a: NonNullable<ReturnType<typeof api.profil
         </div>
       </Panel>
 
+      {/* Battle button */}
+      <div className="flex justify-center">
+        <button
+          onClick={() => setShowBattle(true)}
+          className="btn-arcade btn-mag text-xl px-8 py-3 animate-glowpulse"
+        >
+          ⚔️ BATTLE!
+        </button>
+      </div>
+
       <Panel>
         <div className="text-sm text-neonMagenta uppercase">// SHARED TITLES</div>
         <h2 className="neon text-2xl uppercase">COMMON GROUND · {shared.length}</h2>
@@ -149,5 +170,6 @@ function ComparisonBlock({ a, b }: { a: NonNullable<ReturnType<typeof api.profil
         )}
       </Panel>
     </div>
+    </>
   );
 }
