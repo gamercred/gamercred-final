@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useLocation } from 'wouter';
 import { useQueryClient } from '@tanstack/react-query';
 import { api, startSteamLogin } from '@/lib/api';
@@ -10,6 +10,21 @@ export default function LoginPage() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  // On mount AND every time window regains focus, check if we're logged in.
+  // Window-focus fires when the Steam popup closes — catches login completion.
+  useEffect(() => {
+    const check = () => {
+      api.me().then((res) => {
+        if (res.user) {
+          window.location.href = `/player/${res.user.steamId}`;
+        }
+      }).catch(() => {});
+    };
+    check();
+    window.addEventListener('focus', check);
+    return () => window.removeEventListener('focus', check);
+  }, []);
+
   async function go() {
     setBusy(true);
     setErr(null);
@@ -18,28 +33,28 @@ export default function LoginPage() {
     try {
       const res = await api.stubLogin();
       if (res.ok) {
-        qc.invalidateQueries({ queryKey: ['me'] });
-        qc.invalidateQueries({ queryKey: ['leaderboard'] });
-        qc.invalidateQueries({ queryKey: ['friends'] });
-        setBusy(false);
-        nav(`/player/${res.user.steamId}`);
+        window.location.href = `/player/${res.user.steamId}`;
         return;
       }
     } catch {
-      // Stub endpoint returns 404 in real mode — fall through to Steam OpenID.
+      // Stub returns 404 in real mode — fall through to Steam OpenID.
     }
 
-    // Real Steam OpenID popup flow
+    // Real Steam OpenID popup flow.
     const res = await startSteamLogin();
     setBusy(false);
+
     if (res.ok) {
+      // postMessage worked — redirect now
       const me = await api.me().catch(() => null);
-      qc.invalidateQueries({ queryKey: ['me'] });
-      qc.invalidateQueries({ queryKey: ['leaderboard'] });
-      if (me?.user) nav(`/player/${me.user.steamId}`);
-      else nav('/');
-    } else {
-      setErr(res.error ?? 'unknown');
+      if (me?.user) {
+        window.location.href = `/player/${me.user.steamId}`;
+      } else {
+        window.location.href = '/';
+      }
+    } else if (res.error && res.error !== 'closed') {
+      // Show real errors, but suppress 'closed' (focus listener will catch the login)
+      setErr(res.error);
     }
   }
 
