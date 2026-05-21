@@ -31,7 +31,15 @@ export function isAllowedOrigin(origin: string | undefined | null): boolean {
   try {
     const u = new URL(origin);
     const normalized = `${u.protocol}//${u.host}`.toLowerCase();
-    return allowedOrigins().some(o => trimSlash(o) === trimSlash(normalized));
+    return allowedOrigins().some(o => {
+      const norm = trimSlash(o);
+      if (norm.includes('*.')) {
+        const suffix = norm.split('*.')[1];
+        const proto = norm.startsWith('https://') ? 'https://' : 'http://';
+        return normalized.startsWith(proto) && normalized.endsWith('.' + suffix);
+      }
+      return norm === trimSlash(normalized);
+    });
   } catch {
     return false;
   }
