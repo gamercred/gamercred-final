@@ -106,7 +106,7 @@ export function startSteamLogin(): Promise<{ ok: boolean; steamId?: string; erro
     const onMessage = (e: MessageEvent) => {
       // Verify the message came from OUR popup window, not some other frame/tab.
       // This works whether the popup is same-origin (Vite proxy) or cross-origin (split-host prod).
-      if (e.source !== popup) return;
+      if (e.source !== popup && e.origin !== window.location.origin) return;
       if (!e.data || e.data.type !== 'steam-cred-auth') return;
       const payload = e.data.payload;
       if (!payload || typeof payload !== 'object') return;
