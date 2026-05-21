@@ -464,3 +464,78 @@ body {
     text-shadow: 0 0 14px currentColor, 0 0 35px currentColor, 0 0 55px currentColor;
   }
 }
+
+/* ══════════════════════════════════════════════
+   PARRY QTE — Quick-Time Event challenge
+   ══════════════════════════════════════════════ */
+
+/* Standalone shake — applies to any element (not just battle-overlay) */
+.shake {
+  animation: battle-shake 0.35s ease-out;
+}
+
+/* Parry panel — appears between the player cards while QTE is live */
+.parry-panel {
+  animation: parry-panel-in 0.2s ease-out;
+  z-index: 44;
+  position: relative;
+}
+
+/* Countdown bar */
+.parry-timer-track {
+  width: 100%;
+  height: 8px;
+  background: hsl(220 30% 8%);
+  border: 1px solid hsl(180 100% 50% / 0.25);
+  overflow: hidden;
+}
+.parry-timer-fill {
+  height: 100%;
+  background: linear-gradient(90deg, hsl(180 100% 55%), hsl(180 100% 70%));
+  box-shadow: 0 0 10px hsl(180 100% 50% / 0.6), inset 0 1px 0 hsl(180 100% 85% / 0.4);
+}
+
+/* Weapon flash cover image — sits above the damage number on crit popups */
+.dmg-pop--weapon {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+}
+.weapon-flash-cover {
+  width: 32px;
+  height: 32px;
+  border: 1px solid hsl(55 100% 60% / 0.8);
+  box-shadow: 0 0 12px hsl(55 100% 60% / 0.6);
+  overflow: hidden;
+  animation: weapon-cover-in 0.45s ease-out;
+}
+.weapon-flash-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.dmg-pop-label {
+  white-space: nowrap;
+}
+
+/* Parried damage popup — softer, green-tinged */
+.dmg-pop--parried {
+  font-size: 1.8rem;
+  text-shadow:
+    0 0 8px hsl(140 100% 55% / 0.9),
+    0 0 18px hsl(140 100% 55% / 0.6);
+  filter: brightness(1.1);
+}
+
+@keyframes parry-panel-in {
+  0%   { opacity: 0; transform: translateY(-8px) scale(0.96); }
+  100% { opacity: 1; transform: translateY(0)    scale(1);    }
+}
+
+@keyframes weapon-cover-in {
+  0%   { opacity: 0; transform: scale(0.4); }
+  60%  { opacity: 1; transform: scale(1.15); }
+  100% { opacity: 1; transform: scale(1);    }
+}
