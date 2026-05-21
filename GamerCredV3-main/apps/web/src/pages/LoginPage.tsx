@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useLocation } from 'wouter';
 import { useQueryClient } from '@tanstack/react-query';
 import { api, startSteamLogin } from '@/lib/api';
@@ -10,6 +10,15 @@ export default function LoginPage() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  // On page load, check if already logged in. If so, redirect to home.
+  useEffect(() => {
+    api.me().then((res) => {
+      if (res.user) {
+        window.location.href = `/player/${res.user.steamId}`;
+      }
+    }).catch(() => {});
+  }, []);
+
   async function go() {
     setBusy(true);
     setErr(null);
@@ -18,28 +27,45 @@ export default function LoginPage() {
     try {
       const res = await api.stubLogin();
       if (res.ok) {
-        qc.invalidateQueries({ queryKey: ['me'] });
-        qc.invalidateQueries({ queryKey: ['leaderboard'] });
-        qc.invalidateQueries({ queryKey: ['friends'] });
-        setBusy(false);
-        nav(`/player/${res.user.steamId}`);
+        window.location.href = `/player/${res.user.steamId}`;
         return;
       }
     } catch {
       // Stub endpoint returns 404 in real mode — fall through to Steam OpenID.
     }
 
-    // Real Steam OpenID popup flow
-    const res = await startSteamLogin();
+    // Real Steam OpenID popup flow.
+    // We don't trust postMessage to fire reliably — we poll /api/auth/me instead.
+    const loginPromise = startSteamLogin();
+
+    // Poll for session every 1.5s. If we detect login, hard-navigate.
+    const pollInterval = setInterval(async () => {
+      try {
+        const me = await api.me();
+        if (me.user) {
+          clearInterval(pollInterval);
+          window.location.href = `/player/${me.user.steamId}`;
+        }
+      } catch {}
+    }, 1500);
+
+    // Stop polling after 2 minutes (user gave up)
+    const stopTimer = setTimeout(() => clearInterval(pollInterval), 120_000);
+
+    const res = await loginPromise;
     setBusy(false);
+
     if (res.ok) {
-      const me = await api.me().catch(() => null);
-      qc.invalidateQueries({ queryKey: ['me'] });
-      qc.invalidateQueries({ queryKey: ['leaderboard'] });
-      if (me?.user) nav(`/player/${me.user.steamId}`);
-      else nav('/');
+      // postMessage actually worked — great, redirect now
+      clearInterval(pollInterval);
+      clearTimeout(stopTimer);
+      window.location.href = '/';
     } else {
-      setErr(res.error ?? 'unknown');
+      // Don't show error if polling will still catch it
+      // Only show real errors after polling timeout
+      if (res.error !== 'closed') {
+        setErr(res.error ?? 'unknown');
+      }
     }
   }
 
