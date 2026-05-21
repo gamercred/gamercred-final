@@ -212,7 +212,7 @@ export default function HomePage() {
       <AffiliateRowFull />
 
       <footer className="text-center text-xs text-neonCyan/40 uppercase py-4">
-        STEAM CRED // BUILT FOR GAMERS. STEAM IS A TRADEMARK OF VALVE.
+        GAMERCRED // BUILT FOR GAMERS. STEAM IS A TRADEMARK OF VALVE.
         AFFILIATE LINKS HELP KEEP THIS RUNNING.
       </footer>
     </div>

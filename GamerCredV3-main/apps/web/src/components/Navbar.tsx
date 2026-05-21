@@ -24,7 +24,7 @@ export default function Navbar() {
     <header className="relative z-10 border-b border-neonCyan/30 bg-bg/85 backdrop-blur">
       <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
         <Link href="/" className="flex items-center gap-3">
-          <span className="neon text-3xl font-bold tracking-widest">STEAM CRED</span>
+          <span className="neon text-3xl font-bold tracking-widest">GAMERCRED</span>
           <span className="neon-mag text-sm hidden md:inline">// V0.1</span>
         </Link>
 
