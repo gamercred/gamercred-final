@@ -124,7 +124,9 @@ router.get('/steam/callback', (req, res) => {
   const realm = frontendOrigin;
 
   const relyingParty = new openid.RelyingParty(returnUrl, realm, true, false, []);
-  relyingParty.verifyAssertion(req as any, async (err, result) => {
+  // Reconstruct the exact URL Steam returned to, regardless of proxy hops
+  const fakeReq = { url: `/api/auth/steam/callback${req.url.substring(req.url.indexOf('?'))}`, method: 'GET' };
+  relyingParty.verifyAssertion(fakeReq as any, async (err, result) => {
     if (err || !result || !result.authenticated || !result.claimedIdentifier) {
       logger.error({ err: err?.message, authed: result?.authenticated }, 'openid verify failed');
       return respondClose({ ok: false, error: 'verify_failed' });
