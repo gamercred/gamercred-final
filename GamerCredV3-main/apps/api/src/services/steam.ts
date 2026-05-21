@@ -185,7 +185,7 @@ export function calculateCred(enriched: EnrichedGame[]): {
 export async function getTopRatedGames(limit = 30): Promise<{ appId: number; name: string; positivePct: number; cover: string }[]> {
   const rows = await db.select().from(gameRatings);
   return rows
-    .filter((r) => r.reviewCount >= 1000)
+    .filter((r) => r.reviewCount >= 10000)
     .sort((a, b) => b.positivePct - a.positivePct)
     .slice(0, limit)
     .map((r) => ({

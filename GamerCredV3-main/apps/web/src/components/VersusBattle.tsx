@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import type { ApiUser } from '@/lib/api';
+import type { ApiUser, ApiGame } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
 /* ═══════════════════════════════════════════════
@@ -111,6 +111,48 @@ class BattleSFX {
     });
   }
 
+  /** Parry success fanfare — rapid rising triangle wave arpeggio */
+  parry() {
+    const { ctx, master } = this.ensureCtx();
+    const t = ctx.currentTime;
+    const notes = [1046.5, 1318.51, 1567.98, 2093.0]; // C6 E6 G6 C7
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.type = 'triangle';
+      const start = t + i * 0.05;
+      osc.frequency.setValueAtTime(freq, start);
+      g.gain.setValueAtTime(0.0001, start);
+      g.gain.exponentialRampToValueAtTime(0.15, start + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, start + 0.12);
+      osc.connect(g);
+      g.connect(master);
+      osc.start(start);
+      osc.stop(start + 0.13);
+    });
+  }
+
+  /** Tactile click/ping sound — rapid high-pitched double beep */
+  ping() {
+    const { ctx, master } = this.ensureCtx();
+    const t = ctx.currentTime;
+    const notes = [1500, 1800];
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.type = 'sine';
+      const start = t + i * 0.05;
+      osc.frequency.setValueAtTime(freq, start);
+      g.gain.setValueAtTime(0.0001, start);
+      g.gain.exponentialRampToValueAtTime(0.12, start + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, start + 0.1);
+      osc.connect(g);
+      g.connect(master);
+      osc.start(start);
+      osc.stop(start + 0.11);
+    });
+  }
+
   private noiseBurst(time: number, dur: number, vol: number) {
     const { ctx, master } = this.ensureCtx();
     const buf = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * dur), ctx.sampleRate);
@@ -172,15 +214,36 @@ type TurnResult = {
   aHpAfter: number;
   bHpAfter: number;
   message: string;
+  weaponGame?: { appid: number; name: string; cover: string };
+  parryable?: boolean;
+  parryGame?: { appid: number; name: string; cover: string };
+  isParried?: boolean;
+  isParryFailed?: boolean;
 };
 
-function computeBattle(aUser: ApiUser, bUser: ApiUser): { turns: TurnResult[]; aStats: BattleStats; bStats: BattleStats; winner: 'a' | 'b' } {
+function computeBattle(
+  aUser: ApiUser,
+  bUser: ApiUser,
+  aGames: ApiGame[],
+  bGames: ApiGame[]
+): { turns: TurnResult[]; aStats: BattleStats; bStats: BattleStats; winner: 'a' | 'b' } {
   const aStats = mapStats(aUser);
   const bStats = mapStats(bUser);
 
   let aHp = aStats.maxHp;
   let bHp = bStats.maxHp;
   const turns: TurnResult[] = [];
+
+  const getTopPool = (games: ApiGame[], size: number) => {
+    return [...(games || [])]
+      .sort((g1, g2) => (g2.positivePct || 0) - (g1.positivePct || 0))
+      .slice(0, size);
+  };
+
+  const aTop10 = getTopPool(aGames, 10);
+  const bTop10 = getTopPool(bGames, 10);
+  const aTop20 = getTopPool(aGames, 20);
+  const bTop20 = getTopPool(bGames, 20);
 
   // Determine who goes first by speed
   let firstAttacker: 'a' | 'b';
@@ -229,6 +292,38 @@ function computeBattle(aUser: ApiUser, bUser: ApiUser): { turns: TurnResult[]; a
         aHp = Math.max(0, aHp - damage);
       }
 
+      // Feature 1: Crit Weapon Game Selection
+      let weaponGame: TurnResult['weaponGame'] = undefined;
+      if (isCrit) {
+        const attackerTop10 = current === 'a' ? aTop10 : bTop10;
+        if (attackerTop10.length > 0) {
+          const randGame = attackerTop10[Math.floor(Math.random() * attackerTop10.length)];
+          weaponGame = { appid: randGame.appid, name: randGame.name, cover: randGame.cover };
+        }
+      }
+
+      // Feature 2a: Parryable tags
+      let parryable = false;
+      let parryGame: TurnResult['parryGame'] = undefined;
+      const defenderGamesList = current === 'a' ? bGames : aGames;
+      const defenderTop20 = current === 'a' ? bTop20 : aTop20;
+
+      if (defenderGamesList && defenderGamesList.length > 0) {
+        const parryRoll = Math.random();
+        if (isCrit) {
+          parryable = parryRoll < 0.50;
+        } else {
+          parryable = parryRoll < 0.30;
+        }
+
+        if (parryable && defenderTop20.length > 0) {
+          const randGame = defenderTop20[Math.floor(Math.random() * defenderTop20.length)];
+          parryGame = { appid: randGame.appid, name: randGame.name, cover: randGame.cover };
+        } else {
+          parryable = false; // reset to false if no games available to pick from
+        }
+      }
+
       const critTag = isCrit ? ' CRITICAL HIT!' : '';
       turns.push({
         attacker: current,
@@ -237,6 +332,9 @@ function computeBattle(aUser: ApiUser, bUser: ApiUser): { turns: TurnResult[]; a
         aHpAfter: aHp,
         bHpAfter: bHp,
         message: `${attackerName} deals ${damage} DMG to ${defenderName}!${critTag}`,
+        weaponGame,
+        parryable,
+        parryGame,
       });
     }
 
@@ -249,6 +347,218 @@ function computeBattle(aUser: ApiUser, bUser: ApiUser): { turns: TurnResult[]; a
 }
 
 /* ═══════════════════════════════════════════════
+   PARRY CHALLENGE COMPONENT (QTE)
+   ═══════════════════════════════════════════════ */
+
+interface ParryChallengeProps {
+  defenderGames: ApiGame[];
+  attackerGames: ApiGame[];
+  correctGame: { appid: number; name: string; cover: string };
+  onParry: () => void;
+  onFail: () => void;
+  timeMs?: number;
+}
+
+// Fallback pool of recognizable games for decoys when attacker library is too small
+const FALLBACK_DECOYS = [
+  { appid: 413150, name: 'STARDEW VALLEY', cover: 'https://cdn.cloudflare.steamstatic.com/steam/apps/413150/header.jpg' },
+  { appid: 1145360, name: 'HADES', cover: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1145360/header.jpg' },
+  { appid: 322170, name: 'GEOMETRY DASH', cover: 'https://cdn.cloudflare.steamstatic.com/steam/apps/322170/header.jpg' },
+  { appid: 105600, name: 'TERRARIA', cover: 'https://cdn.cloudflare.steamstatic.com/steam/apps/105600/header.jpg' },
+  { appid: 367520, name: 'HOLLOW KNIGHT', cover: 'https://cdn.cloudflare.steamstatic.com/steam/apps/367520/header.jpg' },
+  { appid: 292030, name: 'THE WITCHER 3', cover: 'https://cdn.cloudflare.steamstatic.com/steam/apps/292030/header.jpg' },
+  { appid: 391540, name: 'UNDERTALE', cover: 'https://cdn.cloudflare.steamstatic.com/steam/apps/391540/header.jpg' },
+  { appid: 1245620, name: 'ELDEN RING', cover: 'https://cdn.cloudflare.steamstatic.com/steam/apps/1245620/header.jpg' }
+];
+
+function ParryChallenge({
+  defenderGames,
+  attackerGames,
+  correctGame,
+  onParry,
+  onFail,
+  timeMs = 3000,
+}: ParryChallengeProps) {
+  const [shuffledCards, setShuffledCards] = useState<Array<{ appid: number; name: string; cover: string }>>([]);
+  const [selectedAppId, setSelectedAppId] = useState<number | null>(null);
+  const [resolved, setResolved] = useState(false);
+  const [timedOut, setTimedOut] = useState(false);
+  const [barWidth, setBarWidth] = useState(100);
+
+  // Initialize the challenge cards
+  useEffect(() => {
+    const correct = { ...correctGame };
+    
+    // Pick decoys from attacker games that are NOT in the defender's library
+    const defenderAppIds = new Set(defenderGames.map((g) => g.appid));
+    const potentialDecoys = (attackerGames || []).filter(
+      (g) => g.appid !== correctGame.appid && !defenderAppIds.has(g.appid)
+    );
+
+    // Get 3 unique decoys
+    const decoys: Array<{ appid: number; name: string; cover: string }> = [];
+    const usedAppIds = new Set<number>();
+
+    // Try to get decoys from the potential pool
+    const poolCopy = [...potentialDecoys];
+    while (decoys.length < 3 && poolCopy.length > 0) {
+      const idx = Math.floor(Math.random() * poolCopy.length);
+      const game = poolCopy.splice(idx, 1)[0];
+      if (!usedAppIds.has(game.appid)) {
+        decoys.push({ appid: game.appid, name: game.name, cover: game.cover });
+        usedAppIds.add(game.appid);
+      }
+    }
+
+    // Fill remaining QTE slots with fallback decoys if needed
+    let fallbackIdx = 0;
+    while (decoys.length < 3 && fallbackIdx < FALLBACK_DECOYS.length) {
+      const fGame = FALLBACK_DECOYS[fallbackIdx++];
+      if (fGame.appid !== correctGame.appid && !defenderAppIds.has(fGame.appid) && !usedAppIds.has(fGame.appid)) {
+        decoys.push(fGame);
+        usedAppIds.add(fGame.appid);
+      }
+    }
+
+    // Shuffle them
+    const allCards = [correct, ...decoys];
+    const shuffled = [...allCards].sort(() => Math.random() - 0.5);
+    setShuffledCards(shuffled);
+
+    // Start visual timer bar depletion
+    const start = Date.now();
+    const timerInterval = setInterval(() => {
+      const elapsed = Date.now() - start;
+      const pct = Math.max(0, 100 - (elapsed / timeMs) * 100);
+      setBarWidth(pct);
+      if (elapsed >= timeMs) {
+        clearInterval(timerInterval);
+      }
+    }, 16);
+
+    // Timeout trigger
+    const timeout = setTimeout(() => {
+      if (!resolved) {
+        setResolved(true);
+        setTimedOut(true);
+        onFail();
+      }
+    }, timeMs);
+
+    return () => {
+      clearInterval(timerInterval);
+      clearTimeout(timeout);
+    };
+  }, [correctGame, defenderGames, attackerGames, timeMs]);
+
+  const handleCardClick = (appid: number) => {
+    if (resolved || selectedAppId !== null) return;
+
+    setSelectedAppId(appid);
+    setResolved(true);
+
+    if (appid === correctGame.appid) {
+      // Success!
+      setTimeout(() => {
+        onParry();
+      }, 600);
+    } else {
+      // Failure!
+      setTimeout(() => {
+        onFail();
+      }, 600);
+    }
+  };
+
+  return (
+    <div className="w-full max-w-xl mx-auto p-4 my-2 border border-neonYellow/40 bg-bg/90 rounded-sm relative shadow-lg">
+      <div className="text-center mb-2">
+        <h3 className="neon-yel text-xl md:text-2xl uppercase font-bold animate-glowpulse">
+          ⚡ INCOMING! PARRY NOW! ⚡
+        </h3>
+        <p className="text-xs text-neonCyan/60 uppercase tracking-widest mt-1">
+          FIND AND CLICK DEFENDER'S GAME: <span className="text-neonCyan font-bold">{correctGame.name}</span>
+        </p>
+      </div>
+
+      {/* Countdown Timer Bar */}
+      <div className="w-full h-3 bg-bg border border-neonCyan/20 mb-4 overflow-hidden relative">
+        <div
+          className="h-full bg-neonCyan transition-all duration-75"
+          style={{
+            width: `${barWidth}%`,
+            boxShadow: '0 0 8px hsl(180 100% 50%)',
+          }}
+        />
+      </div>
+
+      {/* 4 Cards Grid */}
+      <div className="grid grid-cols-4 gap-2">
+        {shuffledCards.map((card) => {
+          const isSelected = selectedAppId === card.appid;
+          const isCorrect = card.appid === correctGame.appid;
+          
+          let cardStatusClass = '';
+          if (resolved) {
+            if (isCorrect) {
+              cardStatusClass = 'ring-2 ring-green-400 scale-105 border-green-400 shadow-[0_0_12px_rgba(74,222,128,0.5)]';
+            } else if (isSelected && !isCorrect) {
+              cardStatusClass = 'ring-2 ring-red-500 border-red-500 shake shadow-[0_0_12px_rgba(239,68,68,0.5)]';
+            } else {
+              cardStatusClass = 'opacity-40 scale-95';
+            }
+          }
+
+          return (
+            <button
+              key={card.appid}
+              disabled={resolved}
+              onClick={() => handleCardClick(card.appid)}
+              className={cn(
+                'game-card p-1.5 flex flex-col items-center gap-1 rounded-sm text-center relative focus:outline-none select-none',
+                'hover:scale-105 transition-transform duration-200 cursor-pointer disabled:cursor-not-allowed',
+                cardStatusClass
+              )}
+            >
+              <img
+                src={card.cover}
+                alt=""
+                className="w-12 h-12 object-cover border border-neonCyan/20"
+                draggable={false}
+              />
+              <div className="text-[10px] uppercase truncate w-full text-neonCyan/80 mt-0.5 leading-none">
+                {card.name}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* QTE Status Overlay */}
+      {resolved && (
+        <div className="absolute inset-0 bg-bg/70 flex items-center justify-center pointer-events-none rounded-sm">
+          <div className="text-center animate-glowpulse">
+            {selectedAppId === correctGame.appid ? (
+              <span className="text-green-400 text-2xl font-bold uppercase tracking-wider block drop-shadow-[0_0_8px_rgba(74,222,128,0.8)]">
+                PARRIED! -50% DMG
+              </span>
+            ) : timedOut ? (
+              <span className="text-red-500 text-2xl font-bold uppercase tracking-wider block drop-shadow-[0_0_8px_rgba(239,68,68,0.8)] animate-bounce">
+                TOO SLOW!
+              </span>
+            ) : (
+              <span className="text-red-500 text-2xl font-bold uppercase tracking-wider block drop-shadow-[0_0_8px_rgba(239,68,68,0.8)]">
+                MISS! FULL DMG
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════
    DAMAGE POPUP COMPONENT
    ═══════════════════════════════════════════════ */
 
@@ -257,6 +567,7 @@ interface DmgPopup {
   side: 'a' | 'b';
   type: 'hit' | 'crit' | 'miss';
   damage: number;
+  weaponGame?: { appid: number; name: string; cover: string };
 }
 
 function DamagePopups({ popups }: { popups: DmgPopup[] }) {
@@ -266,7 +577,7 @@ function DamagePopups({ popups }: { popups: DmgPopup[] }) {
         const isLeft = p.side === 'b'; // damage shows on target side
         const style: React.CSSProperties = {
           left: isLeft ? '18%' : '68%',
-          top: `${25 + Math.random() * 10}%`,
+          top: `${20 + Math.random() * 10}%`,
           color:
             p.type === 'miss'
               ? 'hsl(0 0% 50%)'
@@ -280,13 +591,28 @@ function DamagePopups({ popups }: { popups: DmgPopup[] }) {
           <div
             key={p.id}
             className={cn(
-              'dmg-pop',
+              'dmg-pop flex flex-col items-center gap-1',
               p.type === 'crit' && 'dmg-pop--crit',
               p.type === 'miss' && 'dmg-pop--miss'
             )}
             style={style}
           >
-            {p.type === 'miss' ? 'MISS' : p.type === 'crit' ? `⚡ ${p.damage} ⚡` : `-${p.damage}`}
+            {p.type === 'crit' && p.weaponGame && (
+              <img
+                src={p.weaponGame.cover}
+                alt=""
+                className="w-8 h-8 rounded-sm object-cover border border-neonYellow/40 animate-crit-weapon shadow-[0_0_8px_rgba(250,204,21,0.4)]"
+              />
+            )}
+            <div>
+              {p.type === 'miss'
+                ? 'MISS'
+                : p.type === 'crit'
+                ? p.weaponGame
+                  ? `⚡ ${p.weaponGame.name} — ${p.damage} DMG ⚡`
+                  : `⚡ ${p.damage} ⚡`
+                : `-${p.damage}`}
+            </div>
           </div>
         );
       })}
@@ -406,20 +732,26 @@ function PlayerBattleCard({
 
 type BattlePhase = 'ready' | 'fighting' | 'ko';
 const SPEEDS = [
-  { label: '1×', ms: 800 },
-  { label: '2×', ms: 400 },
-  { label: '3×', ms: 200 },
+  { label: '1×', ms: 1200 },
+  { label: '2×', ms: 800 },
+  { label: '3×', ms: 400 },
 ];
+
+interface VersusBattleProps {
+  aUser: ApiUser;
+  bUser: ApiUser;
+  aGames: ApiGame[];
+  bGames: ApiGame[];
+  onClose: () => void;
+}
 
 export default function VersusBattle({
   aUser,
   bUser,
+  aGames,
+  bGames,
   onClose,
-}: {
-  aUser: ApiUser;
-  bUser: ApiUser;
-  onClose: () => void;
-}) {
+}: VersusBattleProps) {
   const [phase, setPhase] = useState<BattlePhase>('ready');
   const [battleData, setBattleData] = useState<ReturnType<typeof computeBattle> | null>(null);
   const [turnIndex, setTurnIndex] = useState(-1);
@@ -429,6 +761,16 @@ export default function VersusBattle({
   const [popups, setPopups] = useState<DmgPopup[]>([]);
   const [shaking, setShaking] = useState(false);
   const [critFlash, setCritFlash] = useState(false);
+  const [parryChallenge, setParryChallenge] = useState<{
+    turn: TurnResult;
+    defenderGames: ApiGame[];
+    attackerGames: ApiGame[];
+  } | null>(null);
+  const [showSharePanel, setShowSharePanel] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [winner, setWinner] = useState<'a' | 'b' | null>(null);
+  const aHpRef = useRef(0);
+  const bHpRef = useRef(0);
   const popupIdRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
@@ -443,8 +785,10 @@ export default function VersusBattle({
 
   // Start / Rematch
   const startBattle = useCallback(() => {
-    const data = computeBattle(aUser, bUser);
+    const data = computeBattle(aUser, bUser, aGames, bGames);
     setBattleData(data);
+    aHpRef.current = data.aStats.maxHp;
+    bHpRef.current = data.bStats.maxHp;
     setAHp(data.aStats.maxHp);
     setBHp(data.bStats.maxHp);
     setTurnIndex(-1);
@@ -452,11 +796,27 @@ export default function VersusBattle({
     setPopups([]);
     setShaking(false);
     setCritFlash(false);
-  }, [aUser, bUser]);
+    setParryChallenge(null);
+    setShowSharePanel(false);
+    setCopied(false);
+    setWinner(null);
+  }, [aUser, bUser, aGames, bGames]);
 
   // Advance one turn
   const advanceTurn = useCallback(() => {
     if (!battleData) return;
+
+    // If either player is already at 0 HP, prevent further turns
+    if (aHpRef.current <= 0 || bHpRef.current <= 0) {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+      setWinner(aHpRef.current > 0 ? 'a' : 'b');
+      setPhase('ko');
+      sfx.ko();
+      return;
+    }
 
     setTurnIndex((prev) => {
       const next = prev + 1;
@@ -466,29 +826,74 @@ export default function VersusBattle({
           clearInterval(timerRef.current);
           timerRef.current = null;
         }
+        setWinner(aHpRef.current >= bHpRef.current ? 'a' : 'b');
         setPhase('ko');
         sfx.ko();
         return prev;
       }
 
       const turn = battleData.turns[next];
-      setAHp(turn.aHpAfter);
-      setBHp(turn.bHpAfter);
+
+      // Check if this turn is parryable and has not been resolved yet
+      if (turn.parryable && !turn.isParried && !turn.isParryFailed) {
+        // Setup parry QTE state
+        setParryChallenge({
+          turn,
+          defenderGames: turn.attacker === 'a' ? bGames : aGames,
+          attackerGames: turn.attacker === 'a' ? aGames : bGames,
+        });
+        // We do NOT increment the turnIndex here because we want to play this turn when it resumes!
+        return prev;
+      }
+
+      // If we reach here, it is either not parryable, or it has already been resolved.
+      // We apply HP changes and visual effects!
+      const isLeft = turn.attacker === 'b';
+      const actualDamage = turn.isParried ? Math.max(1, Math.round(turn.damage * 0.5)) : (turn.type === 'miss' ? 0 : turn.damage);
+
+      if (turn.attacker === 'a') {
+        const nextHp = Math.max(0, bHpRef.current - actualDamage);
+        bHpRef.current = nextHp;
+        setBHp(nextHp);
+      } else {
+        const nextHp = Math.max(0, aHpRef.current - actualDamage);
+        aHpRef.current = nextHp;
+        setAHp(nextHp);
+      }
+
+      // If either player reached 0 HP on this hit, trigger game over immediately
+      if (aHpRef.current <= 0 || bHpRef.current <= 0) {
+        if (timerRef.current) {
+          clearInterval(timerRef.current);
+          timerRef.current = null;
+        }
+        setWinner(aHpRef.current > 0 ? 'a' : 'b');
+        setPhase('ko');
+        sfx.ko();
+      }
 
       // Spawn damage popup
       const pid = ++popupIdRef.current;
       const targetSide: 'a' | 'b' = turn.attacker === 'a' ? 'b' : 'a';
       setPopups((ps) => [
         ...ps,
-        { id: pid, side: targetSide, type: turn.type, damage: turn.damage },
+        { 
+          id: pid, 
+          side: targetSide, 
+          type: turn.type === 'miss' ? 'miss' : (turn.isParried ? 'hit' : turn.type),
+          damage: actualDamage,
+          weaponGame: turn.weaponGame
+        },
       ]);
       // Remove popup after animation
       setTimeout(() => {
         setPopups((ps) => ps.filter((p) => p.id !== pid));
       }, 1400);
 
-      // Screen shake + flash + SFX on crit
-      if (turn.type === 'crit') {
+      // Screen shake + flash + SFX on crit or hit
+      if (turn.isParried) {
+        sfx.hit();
+      } else if (turn.type === 'crit') {
         setShaking(true);
         setCritFlash(true);
         sfx.crit();
@@ -507,11 +912,17 @@ export default function VersusBattle({
 
       return next;
     });
-  }, [battleData]);
+  }, [battleData, aGames, bGames]);
 
   // Auto-play timer
   useEffect(() => {
-    if (phase !== 'fighting') return;
+    if (phase !== 'fighting' || parryChallenge !== null) {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+      return;
+    }
 
     if (timerRef.current) clearInterval(timerRef.current);
     timerRef.current = setInterval(advanceTurn, SPEEDS[speedIdx].ms);
@@ -519,7 +930,7 @@ export default function VersusBattle({
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [phase, speedIdx, advanceTurn]);
+  }, [phase, speedIdx, advanceTurn, parryChallenge]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -530,6 +941,30 @@ export default function VersusBattle({
 
   const currentTurn = battleData && turnIndex >= 0 ? battleData.turns[turnIndex] : null;
   const visibleTurns = battleData ? battleData.turns.slice(0, turnIndex + 1) : [];
+
+  // Generate beautiful brag message
+  const winnerUser = winner === 'a' ? aUser : bUser;
+  const winnerStats = battleData ? (winner === 'a' ? battleData.aStats : battleData.bStats) : null;
+  const winnerHp = winner === 'a' ? aHp : bHp;
+  const loserUser = winner === 'a' ? bUser : aUser;
+
+  const bragMessage = battleData && winnerStats
+    ? `🎮 GAMERCRED SHOWDOWN REPORT 🎮\n` +
+      `🏆 WINNER: ${winnerUser.personaName} (HP: ${Math.round(winnerHp)}/${winnerStats.maxHp})\n` +
+      `💀 DEFEATED: ${loserUser.personaName}\n` +
+      `⚔️ Combat Stats: ${visibleTurns.length} turns · ` +
+      `${visibleTurns.filter((t) => t.type === 'crit').length} crits · ` +
+      `${visibleTurns.filter((t) => t.type === 'miss').length} misses\n` +
+      `🔥 Fight your own battle at ${window.location.origin}!`
+    : '';
+
+  const handleCopyBrag = () => {
+    navigator.clipboard.writeText(bragMessage).then(() => {
+      setCopied(true);
+      sfx.ping();
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
 
   return (
     <div className={cn('battle-overlay', shaking && 'shake')}>
@@ -595,8 +1030,8 @@ export default function VersusBattle({
               stats={battleData.aStats}
               hp={aHp}
               variant="cyan"
-              isWinner={phase === 'ko' && battleData.winner === 'a'}
-              isKo={phase === 'ko' && battleData.winner === 'b'}
+              isWinner={phase === 'ko' && winner === 'a'}
+              isKo={phase === 'ko' && winner === 'b'}
             />
             <div className="flex flex-col items-center gap-2 self-center">
               <div className="neon-mag text-3xl md:text-4xl animate-glowpulse">VS</div>
@@ -620,23 +1055,55 @@ export default function VersusBattle({
               stats={battleData.bStats}
               hp={bHp}
               variant="mag"
-              isWinner={phase === 'ko' && battleData.winner === 'b'}
-              isKo={phase === 'ko' && battleData.winner === 'a'}
+              isWinner={phase === 'ko' && winner === 'b'}
+              isKo={phase === 'ko' && winner === 'a'}
             />
           </div>
 
           {/* Damage popups */}
           <DamagePopups popups={popups} />
 
+          {/* Parry Challenge QTE Panel */}
+          {parryChallenge && (
+            <ParryChallenge
+              defenderGames={parryChallenge.defenderGames}
+              attackerGames={parryChallenge.attackerGames}
+              correctGame={parryChallenge.turn.parryGame!}
+              onParry={() => {
+                const turn = parryChallenge.turn;
+                const defenderName = turn.attacker === 'a' ? bUser.personaName : aUser.personaName;
+                const reducedDmg = Math.max(1, Math.round(turn.damage * 0.5));
+                turn.isParried = true;
+                turn.message = `[${defenderName}] PARRIED ${turn.parryGame?.name}! 50% reduced → ${reducedDmg} DMG`;
+                
+                sfx.parry();
+                setParryChallenge(null);
+                
+                // Immediately progress to applying resolved turn
+                advanceTurn();
+              }}
+              onFail={() => {
+                const turn = parryChallenge.turn;
+                turn.isParryFailed = true;
+                setParryChallenge(null);
+                
+                // Immediately progress to applying resolved turn
+                advanceTurn();
+              }}
+            />
+          )}
+
           {/* Turn indicator */}
-          {phase === 'fighting' && currentTurn && (
+          {phase === 'fighting' && currentTurn && !parryChallenge && (
             <div className="text-center mt-2">
               <span
                 className={cn(
                   'text-base uppercase',
-                  currentTurn.type === 'crit' && 'neon-yel',
-                  currentTurn.type === 'miss' && 'text-neonCyan/40',
-                  currentTurn.type === 'hit' &&
+                  currentTurn.isParried && 'neon-grn font-bold',
+                  currentTurn.isParryFailed && 'neon-yel',
+                  !currentTurn.isParried && !currentTurn.isParryFailed && currentTurn.type === 'crit' && 'neon-yel',
+                  !currentTurn.isParried && currentTurn.type === 'miss' && 'text-neonCyan/40',
+                  !currentTurn.isParried && currentTurn.type === 'hit' &&
                     (currentTurn.attacker === 'a' ? 'neon' : 'neon-mag')
                 )}
               >
@@ -657,9 +1124,11 @@ export default function VersusBattle({
                   key={i}
                   className={cn(
                     'text-xs uppercase',
-                    t.type === 'crit' && 'neon-yel',
-                    t.type === 'miss' && 'text-neonCyan/30',
-                    t.type === 'hit' && 'text-neonCyan/70'
+                    t.isParried && 'neon-grn font-bold',
+                    t.isParryFailed && 'neon-yel',
+                    !t.isParried && !t.isParryFailed && t.type === 'crit' && 'neon-yel',
+                    !t.isParried && t.type === 'miss' && 'text-neonCyan/30',
+                    !t.isParried && t.type === 'hit' && 'text-neonCyan/70'
                   )}
                 >
                   <span className="text-neonMagenta/40 mr-1">T{i + 1}</span>
@@ -674,31 +1143,132 @@ export default function VersusBattle({
 
           {/* K.O. overlay */}
           {phase === 'ko' && (
-            <div className="ko-overlay bg-bg/80">
-              <div className="ko-text neon-yel">K.O.!</div>
-              <div className="mt-4 text-center">
-                <div className="text-sm uppercase text-neonCyan/60 tracking-widest">WINNER</div>
-                <div
-                  className={cn(
-                    'text-3xl md:text-4xl uppercase mt-1 winner-text',
-                    battleData.winner === 'a' ? 'neon' : 'neon-mag'
-                  )}
-                >
-                  {battleData.winner === 'a' ? aUser.personaName : bUser.personaName}
+            <>
+              {!showSharePanel ? (
+                <div className="ko-overlay bg-bg/85">
+                  <div className="ko-text neon-yel text-5xl md:text-6xl select-none font-bold animate-glowpulse">
+                    K.O.!
+                  </div>
+                  <div className="mt-4 text-center">
+                    <div className="text-sm uppercase text-neonCyan/60 tracking-widest">// WINNER //</div>
+                    <div
+                      className={cn(
+                        'text-3xl md:text-4xl uppercase mt-1 winner-text font-bold',
+                        winner === 'a' ? 'neon' : 'neon-mag'
+                      )}
+                    >
+                      {winner === 'a' ? aUser.personaName : bUser.personaName}
+                    </div>
+                    <div className="text-xs text-neonCyan/40 uppercase mt-2 select-none">
+                      {visibleTurns.length} TURNS · {visibleTurns.filter((t) => t.type === 'crit').length} CRITS · {visibleTurns.filter((t) => t.type === 'miss').length} MISSES
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap justify-center gap-3 mt-6">
+                    <button onClick={startBattle} className="btn-arcade text-base px-5 py-2">
+                      🔄 REMATCH
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowSharePanel(true);
+                        sfx.ping();
+                      }}
+                      className="btn-arcade btn-mag text-base px-5 py-2 animate-glowpulse"
+                    >
+                      📢 SHARE RESULT
+                    </button>
+                    <button onClick={onClose} className="btn-arcade text-base px-5 py-2" style={{ borderColor: 'hsl(0 0% 40%)', color: 'hsl(0 0% 60%)' }}>
+                      ✕ CLOSE
+                    </button>
+                  </div>
                 </div>
-                <div className="text-xs text-neonCyan/40 uppercase mt-2">
-                  {visibleTurns.length} TURNS · {visibleTurns.filter((t) => t.type === 'crit').length} CRITS · {visibleTurns.filter((t) => t.type === 'miss').length} MISSES
+              ) : (
+                <div className="ko-overlay bg-bg/95 flex flex-col items-center justify-center p-4">
+                  <div className="text-center mb-3 animate-glowpulse">
+                    <h3 className="neon-yel text-2xl md:text-3xl uppercase font-bold tracking-wider">
+                      📢 BRAG & SHARE RESULTS 📢
+                    </h3>
+                    <p className="text-xs text-neonCyan/60 uppercase tracking-widest mt-1">
+                      Show off your gamer cred supremacy
+                    </p>
+                  </div>
+
+                  {/* Brag Text Area */}
+                  <div className="w-full max-w-md mb-3">
+                    <div className="text-xs text-neonMagenta/60 uppercase mb-1 tracking-wider font-bold">
+                      // PRE-FORMATTED BATTLE REPORT
+                    </div>
+                    <textarea
+                      readOnly
+                      value={bragMessage}
+                      className="w-full h-28 p-2.5 bg-black/80 border border-neonCyan/30 rounded-sm text-neonCyan font-mono text-xs uppercase resize-none focus:outline-none focus:border-neonCyan"
+                      style={{ textShadow: '0 0 4px hsl(180 100% 50% / 0.4)' }}
+                    />
+                    
+                    {/* Copy Button */}
+                    <button
+                      onClick={handleCopyBrag}
+                      className={cn(
+                        'w-full mt-2 btn-arcade text-xs py-2 transition-all duration-300 font-bold',
+                        copied ? 'btn-grn shadow-[0_0_12px_rgba(74,222,128,0.6)]' : 'btn-mag'
+                      )}
+                    >
+                      {copied ? '⚡ COPIED TO CLIPBOARD! ⚡' : '📋 COPY BRAG REPORT'}
+                    </button>
+                  </div>
+
+                  {/* Steam Chat Direct Link Section */}
+                  <div className="w-full max-w-md mb-4 border border-neonCyan/20 bg-bg/85 p-3 rounded-sm text-center">
+                    <div className="text-xs text-neonMagenta/60 uppercase mb-2 tracking-wider font-bold">
+                      💬 SEND PERSONAL MESSAGE VIA STEAM CHAT
+                    </div>
+                    
+                    <div className="flex flex-col gap-2">
+                      {[aUser, bUser].map((user) => {
+                        const isReal = /^\d{17}$/.test(user.steamId);
+                        return (
+                          <a
+                            key={user.steamId}
+                            href={`steam://friends/message/${user.steamId}`}
+                            className={cn(
+                              'btn-arcade text-xs py-2.5 flex items-center justify-center gap-1.5 no-underline',
+                              isReal ? 'border-neonCyan/40 hover:border-neonCyan/80 hover:bg-neonCyan/5' : 'opacity-70 cursor-not-allowed border-neonCyan/20'
+                            )}
+                            onClick={(e) => {
+                              if (!isReal) {
+                                e.preventDefault();
+                                alert(`Mock Steam ID detected (${user.steamId}). In production, this launches the Steam client chat with this player.`);
+                              }
+                            }}
+                          >
+                            <span>💬 MESSAGE {user.personaName.toUpperCase()}</span>
+                            {!isReal && (
+                              <span className="text-[9px] bg-neonMagenta/20 text-neonMagenta border border-neonMagenta/40 px-1 rounded-sm scale-90">
+                                MOCK
+                              </span>
+                            )}
+                          </a>
+                        );
+                      })}
+                    </div>
+                    
+                    <p className="text-[10px] text-neonCyan/40 uppercase mt-2.5 leading-tight">
+                      Tip: Copy the report first, click a message button to open the Steam desktop chat, and paste it directly!
+                    </p>
+                  </div>
+
+                  {/* Back Button */}
+                  <button
+                    onClick={() => {
+                      setShowSharePanel(false);
+                      sfx.ping();
+                    }}
+                    className="btn-arcade text-xs px-6 py-2"
+                  >
+                    ◀ BACK TO RESULTS
+                  </button>
                 </div>
-              </div>
-              <div className="flex gap-3 mt-6">
-                <button onClick={startBattle} className="btn-arcade text-base px-5 py-2">
-                  🔄 REMATCH
-                </button>
-                <button onClick={onClose} className="btn-arcade btn-mag text-base px-5 py-2">
-                  ✕ CLOSE
-                </button>
-              </div>
-            </div>
+              )}
+            </>
           )}
         </div>
       )}

@@ -105,6 +105,8 @@ function ComparisonBlock({ a, b }: { a: NonNullable<ReturnType<typeof api.profil
       <VersusBattle
         aUser={a.user}
         bUser={b.user}
+        aGames={a.games}
+        bGames={b.games}
         onClose={() => setShowBattle(false)}
       />
     )}

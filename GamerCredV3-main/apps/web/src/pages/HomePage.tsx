@@ -15,6 +15,7 @@ export default function HomePage() {
   const { data: meData } = useQuery({ queryKey: ['me'], queryFn: api.me });
   const me = meData?.user;
   const lb = useQuery({ queryKey: ['leaderboard'], queryFn: api.leaderboard });
+  const dailyLb = useQuery({ queryKey: ['dailyLeaderboard'], queryFn: api.dailyLeaderboard });
   const friends = useQuery({
     queryKey: ['friends'],
     queryFn: api.friends,
@@ -161,6 +162,48 @@ export default function HomePage() {
             <div className="text-center py-8 text-neonCyan/60">
               NO OPERATORS REGISTERED. BE THE FIRST — <Link href="/login" className="underline neon">CONNECT WITH STEAM</Link>.
             </div>
+          </Panel>
+        )}
+      </section>
+
+      {/* Daily Leaderboard preview */}
+      <section>
+        <div className="flex items-end justify-between mb-2">
+          <h2 className="neon-mag text-3xl uppercase">DAILY TOP GUNS</h2>
+          <span className="text-xs text-neonMagenta/80 uppercase tracking-widest">// PAST 24 HOURS CRED GAIN</span>
+        </div>
+        {dailyLb.isLoading && <LoadingScreen />}
+        {dailyLb.error && <ErrorScreen message={(dailyLb.error as Error).message} />}
+        {dailyLb.data?.users && (
+          <Panel variant="magenta">
+            <div className="grid grid-cols-12 gap-2 text-xs uppercase text-neonMagenta/60 border-b border-neonMagenta/20 pb-2 mb-2">
+              <div className="col-span-1">#</div>
+              <div className="col-span-5">PLAYER</div>
+              <div className="col-span-2 text-right">DAILY CRED</div>
+              <div className="col-span-2 text-right">24H PLAYTIME</div>
+              <div className="col-span-2 text-right">TOTAL HOURS</div>
+            </div>
+            {dailyLb.data.users.slice(0, 5).map((u, i) => (
+              <Link
+                key={u.steamId}
+                href={`/player/${u.steamId}`}
+                className="grid grid-cols-12 gap-2 items-center py-2 hover:bg-neonMagenta/5 px-1"
+              >
+                <div className="col-span-1 neon-yel text-xl">{i + 1}</div>
+                <div className="col-span-5 flex items-center gap-2 min-w-0">
+                  {u.avatar && <img src={u.avatar} alt="" className="w-8 h-8 border border-neonMagenta/40" />}
+                  <span className="truncate uppercase">{u.personaName}</span>
+                </div>
+                <div className="col-span-2 text-right neon-mag">+{formatCred(u.dailyCred)}</div>
+                <div className="col-span-2 text-right text-neonCyan/80">{formatHours(u.playtime24h)}</div>
+                <div className="col-span-2 text-right text-neonCyan/80">{formatHours(u.totalHours)}</div>
+              </Link>
+            ))}
+            {dailyLb.data.users.length === 0 && (
+              <div className="text-center py-8 text-neonMagenta/60 uppercase">
+                NO RECENT TRAINING RECORDED YET. GET SOME PLAYTIME TO CLAIM THE SPOTLIGHT!
+              </div>
+            )}
           </Panel>
         )}
       </section>

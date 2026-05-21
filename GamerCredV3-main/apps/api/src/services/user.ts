@@ -109,17 +109,30 @@ export async function ensureCred(
   return { user: updated ?? user, games: enriched };
 }
 
-export async function syncFriends(steamId: string): Promise<void> {
+export async function syncFriends(steamId: string, depth = 2): Promise<void> {
   try {
-    logger.info({ steamId }, 'syncFriends: Fetching friends list from Steam');
+    // Check if we already have synced friends for this user when performing nested crawls to avoid redundant API calls
+    if (depth < 2) {
+      const existing = await db
+        .select({ userSteamId: friendships.userSteamId })
+        .from(friendships)
+        .where(eq(friendships.userSteamId, steamId))
+        .limit(1);
+      if (existing.length > 0) {
+        logger.info({ steamId, depth }, 'syncFriends: Already crawled friends for this user, skipping redundant crawl');
+        return;
+      }
+    }
+
+    logger.info({ steamId, depth }, 'syncFriends: Fetching friends list from Steam');
     const friends = await getFriendList(steamId);
     if (friends.length === 0) {
-      logger.info({ steamId }, 'syncFriends: No friends found or friends list is private');
+      logger.info({ steamId, depth }, 'syncFriends: No friends found or friends list is private');
       return;
     }
 
     const friendSteamIds = friends.map((f) => f.steamid);
-    logger.info({ steamId, count: friendSteamIds.length }, 'syncFriends: Found friends, importing summaries...');
+    logger.info({ steamId, depth, count: friendSteamIds.length }, 'syncFriends: Found friends, importing summaries...');
 
     // Fetch summaries in batches of 100 (Steam's limit per request)
     const CHUNK = 100;
@@ -141,7 +154,7 @@ export async function syncFriends(steamId: string): Promise<void> {
       }
     }
 
-    logger.info({ steamId, publicCount: summaries.length }, 'syncFriends: Syncing public friend profiles to DB...');
+    logger.info({ steamId, depth, publicCount: summaries.length }, 'syncFriends: Syncing public friend profiles to DB...');
 
     for (const f of summaries) {
       // Upsert friend profile
@@ -178,8 +191,25 @@ export async function syncFriends(steamId: string): Promise<void> {
       });
     }
 
-    logger.info({ steamId }, 'syncFriends: Friends list syncing complete!');
+    logger.info({ steamId, depth }, 'syncFriends: Friends list syncing complete!');
+
+    // Recursively sync friends of friends in the background sequentially
+    if (depth > 0) {
+      (async () => {
+        logger.info({ steamId, depth, count: summaries.length }, 'syncFriends: Launching background crawler for deeper degree friends');
+        for (const f of summaries) {
+          try {
+            await syncFriends(f.steamid, depth - 1);
+          } catch (err) {
+            logger.warn({ friendId: f.steamid, err: (err as Error).message }, 'syncFriends: Recursive sync failed');
+          }
+        }
+        logger.info({ steamId, depth }, 'syncFriends: Background crawler for deeper degree friends complete');
+      })().catch((err) => {
+        logger.error({ steamId, err: err?.message }, 'syncFriends: Background crawler orchestrator failed');
+      });
+    }
   } catch (e) {
-    logger.error({ steamId, err: (e as Error).message }, 'syncFriends: Sync failed');
+    logger.error({ steamId, depth, err: (e as Error).message }, 'syncFriends: Sync failed');
   }
 }
