@@ -125,6 +125,10 @@ app.use((err: any, req: any, res: any, _next: any) => {
 });
 
 const port = Number(process.env.PORT ?? 4000);
-app.listen(port, () => {
-  logger.info({ port, env: process.env.NODE_ENV, stub: STUB_MODE, allowed: allowedOrigins() }, 'steam-cred API listening');
-});
+if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
+  app.listen(port, () => {
+    logger.info({ port, env: process.env.NODE_ENV, stub: STUB_MODE, allowed: allowedOrigins() }, 'steam-cred API listening');
+  });
+}
+
+export default app;
